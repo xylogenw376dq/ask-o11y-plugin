@@ -801,10 +801,10 @@ func (p *Plugin) handleMCPCallTool(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	orgID := r.Header.Get("X-Grafana-Org-Id")
-	if orgID == "" {
-		orgID = "1"
-	}
+	// Server-populated plugin context only: the client-controllable
+	// X-Grafana-Org-Id header would let a caller scope tool calls (incl.
+	// Graphiti group_id) to another org.
+	orgID := strconv.FormatInt(getOrgID(r), 10)
 	mcp.EnsureScopedGraphitiArgs(tool, req.Arguments, orgID)
 
 	p.logger.Debug("Tool call context", "orgID", orgID, "orgName", req.OrgName, "scopeOrgId", req.ScopeOrgId, "tool", req.Name)

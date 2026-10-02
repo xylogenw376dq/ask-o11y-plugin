@@ -20,7 +20,8 @@ export function getTabLabel(ref: GrafanaPageRef, index: number): string {
  * Returns an empty string for anything that is not a Grafana dashboard or
  * Explore URL: persisted/imported/shared session data is untrusted, and
  * without this guard an attacker-controlled value (external origin, other
- * schemes) would end up as the iframe src.
+ * schemes, or path traversal escaping into other same-origin routes) would
+ * end up as the iframe src.
  */
 export function toRelativeUrl(url: string, kioskModeEnabled = true): string {
   let relativeUrl = url;
@@ -34,6 +35,19 @@ export function toRelativeUrl(url: string, kioskModeEnabled = true): string {
   }
 
   if (!/^\/(d\/|explore)/.test(relativeUrl)) {
+    return '';
+  }
+
+  // Reject path traversal so "/d/../admin" (or an encoded variant) cannot
+  // escape into another same-origin route inside the iframe.
+  const pathOnly = relativeUrl.split('?')[0];
+  let decodedPath = pathOnly;
+  try {
+    decodedPath = decodeURIComponent(pathOnly);
+  } catch {
+    return '';
+  }
+  if (/(^|\/)\.\.?(\/|$)/.test(decodedPath) || /%2e/i.test(pathOnly)) {
     return '';
   }
 

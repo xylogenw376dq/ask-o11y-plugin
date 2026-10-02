@@ -1,12 +1,18 @@
 package plugin
 
 import (
+	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/grafana/grafana-plugin-sdk-go/backend/log"
+	mcpsdk "github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"consensys-asko11y-app/pkg/mcp"
 )
 
 // The raw JSON-RPC /mcp route bypassed RBAC, tool selection, Graphiti org
@@ -145,5 +151,57 @@ func TestInMemoryRateLimiterBoundsTrackedUsers(t *testing.T) {
 	defer rl.mu.RUnlock()
 	if len(rl.limiters) > maxTrackedUsers {
 		t.Fatalf("tracked users = %d, want <= %d", len(rl.limiters), maxTrackedUsers)
+	}
+}
+
+// handleMCPCallTool must scope Graphiti group_id from the server-populated
+// plugin context, not from the client-controllable X-Grafana-Org-Id header.
+func TestHandleMCPCallToolScopesGraphitiFromPluginContext(t *testing.T) {
+	var capturedGroupID atomic.Value // string
+	srv := mcpsdk.NewServer(&mcpsdk.Implementation{Name: "fake", Version: "1.0.0"}, nil)
+	// The proxy prefixes cached tool names with the server ID, so the caller
+	// sees "fake_graphiti_search_memory_facts".
+	srv.AddTool(&mcpsdk.Tool{
+		Name: "graphiti_search_memory_facts",
+		InputSchema: map[string]any{
+			"type": "object",
+			"properties": map[string]any{
+				"group_id": map[string]any{"type": "string"},
+			},
+		},
+	}, func(ctx context.Context, req *mcpsdk.CallToolRequest) (*mcpsdk.CallToolResult, error) {
+		var args struct {
+			GroupID string `json:"group_id"`
+		}
+		_ = json.Unmarshal(req.Params.Arguments, &args)
+		capturedGroupID.Store(args.GroupID)
+		return &mcpsdk.CallToolResult{Content: []mcpsdk.Content{&mcpsdk.TextContent{Text: "ok"}}}, nil
+	})
+	server := httptest.NewServer(mcpsdk.NewStreamableHTTPHandler(func(*http.Request) *mcpsdk.Server { return srv }, nil))
+	defer server.Close()
+
+	proxy := mcp.NewProxy(context.Background(), log.DefaultLogger)
+	if err := proxy.UpdateConfig([]mcp.ServerConfig{{
+		ID: "fake", Name: "fake", URL: server.URL, Type: "streamable-http", Enabled: true,
+	}}); err != nil {
+		t.Fatalf("failed to configure proxy: %v", err)
+	}
+	defer proxy.Close()
+	p := &Plugin{logger: log.DefaultLogger, mcpProxy: proxy}
+
+	// Caller claims org 99 via the header; the plugin context says org 2.
+	req := httptest.NewRequest(http.MethodPost, "/api/mcp/call-tool", strings.NewReader(`{"name":"fake_graphiti_search_memory_facts","arguments":{}}`))
+	req.Header.Set("X-Grafana-Org-Id", "99")
+	req = withTestIdentity(req, 2, "user-7", "Admin")
+	rec := httptest.NewRecorder()
+
+	p.handleMCPCallTool(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rec.Code, rec.Body.String())
+	}
+	got, _ := capturedGroupID.Load().(string)
+	if got != "org_2" {
+		t.Fatalf("graphiti group_id = %q, want org_2 (org must come from plugin context)", got)
 	}
 }

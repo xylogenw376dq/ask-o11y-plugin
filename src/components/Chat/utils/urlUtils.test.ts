@@ -45,6 +45,18 @@ describe('toRelativeUrl', () => {
     expect(toRelativeUrl('/dashboard/new')).toBe('');
   });
 
+  it('rejects path traversal escaping into other same-origin routes', () => {
+    expect(toRelativeUrl('/d/../admin')).toBe('');
+    expect(toRelativeUrl('/explore/../logout')).toBe('');
+    expect(toRelativeUrl('/d/abc/../../admin/users')).toBe('');
+    expect(toRelativeUrl('/d/%2e%2e/admin')).toBe('');
+    expect(toRelativeUrl('https://grafana.example.com/d/../admin')).toBe('');
+  });
+
+  it('rejects malformed percent-encoding', () => {
+    expect(toRelativeUrl('/d/abc%zz/x')).toBe('');
+  });
+
   it('rejects empty input', () => {
     expect(toRelativeUrl('')).toBe('');
   });
