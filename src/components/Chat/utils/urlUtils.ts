@@ -38,13 +38,17 @@ export function toRelativeUrl(url: string, kioskModeEnabled = true): string {
     return '';
   }
 
-  // Reject path traversal so "/d/../admin" (or an encoded variant) cannot
-  // escape into another same-origin route inside the iframe.
+  // Reject path traversal so "/d/../admin" (or an encoded/backslash variant —
+  // browsers treat "\" as "/" in HTTP URLs) cannot escape into another
+  // same-origin route inside the iframe.
   const pathOnly = relativeUrl.split('?')[0];
   let decodedPath = pathOnly;
   try {
     decodedPath = decodeURIComponent(pathOnly);
   } catch {
+    return '';
+  }
+  if (pathOnly.includes('\\') || decodedPath.includes('\\')) {
     return '';
   }
   if (/(^|\/)\.\.?(\/|$)/.test(decodedPath) || /%2e/i.test(pathOnly)) {

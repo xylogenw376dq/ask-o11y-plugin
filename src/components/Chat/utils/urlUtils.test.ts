@@ -53,6 +53,13 @@ describe('toRelativeUrl', () => {
     expect(toRelativeUrl('https://grafana.example.com/d/../admin')).toBe('');
   });
 
+  it('rejects backslash traversal (browsers treat \\ as / in HTTP URLs)', () => {
+    expect(toRelativeUrl('/d/\\..\\..\\admin')).toBe('');
+    expect(toRelativeUrl('/d/%5c..%5cadmin')).toBe('');
+    expect(toRelativeUrl('/d/..%5Cadmin')).toBe('');
+    expect(toRelativeUrl('/explore/\\../logout')).toBe('');
+  });
+
   it('rejects malformed percent-encoding', () => {
     expect(toRelativeUrl('/d/abc%zz/x')).toBe('');
   });
