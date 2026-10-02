@@ -14,15 +14,27 @@ export function getTabLabel(ref: GrafanaPageRef, index: number): string {
 }
 
 /**
- * Convert an absolute URL to a relative URL suitable for iframe embedding
- * Optionally adds kiosk mode parameter
+ * Convert an absolute URL to a relative URL suitable for iframe embedding.
+ * Optionally adds kiosk mode parameter.
+ *
+ * Returns an empty string for anything that is not a Grafana dashboard or
+ * Explore URL: persisted/imported/shared session data is untrusted, and
+ * without this guard an attacker-controlled value (external origin, other
+ * schemes) would end up as the iframe src.
  */
 export function toRelativeUrl(url: string, kioskModeEnabled = true): string {
   let relativeUrl = url;
 
   if (url.startsWith('http://') || url.startsWith('https://')) {
     const match = url.match(/https?:\/\/[^/]+(\/.*)/);
-    relativeUrl = match ? match[1] : url;
+    if (!match) {
+      return '';
+    }
+    relativeUrl = match[1];
+  }
+
+  if (!/^\/(d\/|explore)/.test(relativeUrl)) {
+    return '';
   }
 
   if (relativeUrl.includes('kiosk') || relativeUrl.includes('viewPanel')) {
