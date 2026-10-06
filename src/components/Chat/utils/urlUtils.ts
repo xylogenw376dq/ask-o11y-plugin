@@ -68,11 +68,15 @@ export function toRelativeUrl(url: string, kioskModeEnabled = true, subpath: str
   // Validate the path only: query and fragment never affect routing.
   const pathOnly = relativeUrl.split(/[?#]/)[0];
 
-  // Fully percent-decode (bounded) so double-encoded sequences cannot smuggle
-  // traversal past the dot-segment resolver or survive into the emitted path:
-  // "%252e%252e" decodes once to "%2e%2e", which servers then read as "..".
+  // Percent-decode before validation so encoded traversal cannot smuggle past
+  // the dot-segment resolver: "%2e%2e" (and any deeper encoding like
+  // "%252e%252e") has to be seen as the segments it really is. The loop is
+  // bounded, so afterwards ANY remaining "%" is rejected — that makes the
+  // bound irrelevant, because a path with leftover percent-sequences could
+  // still be decoded further by browsers or servers. Literal "%" never
+  // legitimately appears in a Grafana dashboard/Explore path.
   let decodedPath = pathOnly;
-  for (let i = 0; i < 4 && /%[0-9a-f]/i.test(decodedPath); i++) {
+  for (let i = 0; i < 8 && /%[0-9a-f]/i.test(decodedPath); i++) {
     let next: string;
     try {
       next = decodeURIComponent(decodedPath);
@@ -85,9 +89,8 @@ export function toRelativeUrl(url: string, kioskModeEnabled = true, subpath: str
     decodedPath = next;
   }
   // Raw and percent-encoded backslashes decode into separators just the same
-  // (browsers treat "\" as "/" in HTTP(S) URLs). Malformed escapes ("%zz")
-  // never round-trip cleanly, so reject them too.
-  if (decodedPath.includes('\\') || /[\u0000-\u001f]/.test(decodedPath) || /%(?![0-9a-f]{2})/i.test(decodedPath)) {
+  // (browsers treat "\" as "/" in HTTP(S) URLs).
+  if (decodedPath.includes('%') || decodedPath.includes('\\') || /[\u0000-\u001f]/.test(decodedPath)) {
     return '';
   }
 

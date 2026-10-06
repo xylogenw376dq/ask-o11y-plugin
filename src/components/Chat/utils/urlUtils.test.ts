@@ -91,6 +91,22 @@ describe('toRelativeUrl', () => {
     expect(toRelativeUrl('/d/%255c..%255cadmin')).toBe('');
   });
 
+  it('rejects any path that still contains a percent sign after decoding', () => {
+    // The decode loop is bounded, so deeper encodings (or any leftover
+    // percent-sequence a server might decode further) must be rejected
+    // outright rather than emitted.
+    expect(toRelativeUrl('/d/%25252e%25252e/admin')).toBe('');
+    // A 9x-encoded space still contains "%" after the 8 decode rounds.
+    expect(toRelativeUrl(`/d/abc/${'%25'.repeat(8)}20x`)).toBe('');
+    expect(toRelativeUrl('/d/abc%zz/x')).toBe('');
+    expect(toRelativeUrl('/d/100%25')).toBe('');
+    // Fully decodable sequences are fine: "%2520" is just a double-encoded
+    // space.
+    expect(toRelativeUrl('/d/abc%2520x')).toBe('/d/abc x?kiosk');
+    // Query and fragment are inert for routing and may keep percent-escapes.
+    expect(toRelativeUrl('/d/abc/x?query=%7B1%7D')).toBe('/d/abc/x?query=%7B1%7D&kiosk');
+  });
+
   it('still accepts legitimately percent-encoded paths', () => {
     expect(toRelativeUrl('/d/abc123/my%20dashboard')).toBe('/d/abc123/my dashboard?kiosk');
     expect(toRelativeUrl('/d/abc123/%D0%BF%D0%B0%D0%BD%D0%B5%D0%BB%D1%8C')).toBe('/d/abc123/панель?kiosk');
