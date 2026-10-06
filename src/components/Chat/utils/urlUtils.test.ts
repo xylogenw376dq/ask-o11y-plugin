@@ -9,6 +9,19 @@ describe('toRelativeUrl', () => {
     expect(toRelativeUrl('/explore?left={"datasource":"loki"}')).toBe('/explore?left={"datasource":"loki"}&kiosk');
   });
 
+  it('accepts subpath-prefixed dashboard and explore URLs', () => {
+    expect(toRelativeUrl('/grafana/d/abc/x', true, '/grafana')).toBe('/grafana/d/abc/x?kiosk');
+    expect(toRelativeUrl('/grafana/explore', true, '/grafana')).toBe('/grafana/explore?kiosk');
+    expect(toRelativeUrl('/grafana/explore?left={}', true, '/grafana')).toBe('/grafana/explore?left={}&kiosk');
+    expect(toRelativeUrl('/grafana/d/abc/x', true, '/grafana/')).toBe('/grafana/d/abc/x?kiosk');
+  });
+
+  it('rejects routes outside the configured subpath', () => {
+    expect(toRelativeUrl('/d/abc/x', true, '/grafana')).toBe('');
+    expect(toRelativeUrl('/grafana/admin/users', true, '/grafana')).toBe('');
+    expect(toRelativeUrl('/grafana/d/abc/../../admin', true, '/grafana')).toBe('');
+  });
+
   it('does not duplicate kiosk parameter', () => {
     expect(toRelativeUrl('/d/abc/x?kiosk')).toBe('/d/abc/x?kiosk');
   });
@@ -58,6 +71,22 @@ describe('toRelativeUrl', () => {
     expect(toRelativeUrl('/d/%5c..%5cadmin')).toBe('');
     expect(toRelativeUrl('/d/..%5Cadmin')).toBe('');
     expect(toRelativeUrl('/explore/\\../logout')).toBe('');
+  });
+
+  it('rejects control-character traversal and fragment escapes', () => {
+    // URL parsers strip tab/LF/CR, so "/d/.\t./logout" resolves to "/logout".
+    expect(toRelativeUrl('/d/.\t./logout')).toBe('');
+    expect(toRelativeUrl('/d/..\n/logout')).toBe('');
+    // "/d/..#fragment" resolves to "/".
+    expect(toRelativeUrl('/d/..#fragment')).toBe('');
+    expect(toRelativeUrl('/explore/..#')).toBe('');
+  });
+
+  it('rejects lookalike prefixes without a segment boundary', () => {
+    expect(toRelativeUrl('/explorer')).toBe('');
+    expect(toRelativeUrl('/d')).toBe('');
+    expect(toRelativeUrl('/d/')).toBe('');
+    expect(toRelativeUrl('/explore-help')).toBe('');
   });
 
   it('rejects malformed percent-encoding', () => {

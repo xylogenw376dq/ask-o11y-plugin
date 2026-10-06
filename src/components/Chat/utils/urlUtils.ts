@@ -1,4 +1,5 @@
 import { GrafanaPageRef } from '../types';
+import { getSubpath } from '../../../utils/subpath';
 
 /**
  * Generate a display label for a tab
@@ -13,6 +14,28 @@ export function getTabLabel(ref: GrafanaPageRef, index: number): string {
   return ref.type === 'explore' ? 'Explore' : `Page ${index + 1}`;
 }
 
+/** Removes RFC 3986 dot segments; returns null if the path escapes the root. */
+function resolveDotSegments(path: string): string | null {
+  if (!path.startsWith('/')) {
+    return null;
+  }
+  const segments: string[] = [];
+  for (const segment of path.slice(1).split('/')) {
+    if (segment === '.') {
+      continue;
+    }
+    if (segment === '..') {
+      if (segments.length === 0) {
+        return null;
+      }
+      segments.pop();
+      continue;
+    }
+    segments.push(segment);
+  }
+  return `/${segments.join('/')}`;
+}
+
 /**
  * Convert an absolute URL to a relative URL suitable for iframe embedding.
  * Optionally adds kiosk mode parameter.
@@ -20,10 +43,12 @@ export function getTabLabel(ref: GrafanaPageRef, index: number): string {
  * Returns an empty string for anything that is not a Grafana dashboard or
  * Explore URL: persisted/imported/shared session data is untrusted, and
  * without this guard an attacker-controlled value (external origin, other
- * schemes, or path traversal escaping into other same-origin routes) would
- * end up as the iframe src.
+ * schemes, path traversal escaping into other same-origin routes) would
+ * end up as the iframe src. The route is validated after dot-segment
+ * resolution and percent-decoding, relative to the configured subpath
+ * (e.g. "/grafana" behind a reverse proxy).
  */
-export function toRelativeUrl(url: string, kioskModeEnabled = true): string {
+export function toRelativeUrl(url: string, kioskModeEnabled = true, subpath: string = getSubpath()): string {
   let relativeUrl = url;
 
   if (url.startsWith('http://') || url.startsWith('https://')) {
@@ -34,24 +59,39 @@ export function toRelativeUrl(url: string, kioskModeEnabled = true): string {
     relativeUrl = match[1];
   }
 
-  if (!/^\/(d\/|explore)/.test(relativeUrl)) {
+  // Tab, LF and CR are stripped by URL parsers, so "/d/.\t./logout" reaches
+  // the server as "/d/../logout". Reject control characters outright.
+  if (/[\u0000-\u001f]/.test(relativeUrl)) {
     return '';
   }
 
-  // Reject path traversal so "/d/../admin" (or an encoded/backslash variant —
-  // browsers treat "\" as "/" in HTTP URLs) cannot escape into another
-  // same-origin route inside the iframe.
-  const pathOnly = relativeUrl.split('?')[0];
-  let decodedPath = pathOnly;
+  // Validate the path only: query and fragment never affect routing.
+  const pathOnly = relativeUrl.split(/[?#]/)[0];
+  // Browsers treat "\" as "/" in HTTP(S) URLs.
+  if (pathOnly.includes('\\')) {
+    return '';
+  }
+  let decodedPath: string;
   try {
     decodedPath = decodeURIComponent(pathOnly);
   } catch {
     return '';
   }
-  if (pathOnly.includes('\\') || decodedPath.includes('\\')) {
+  // Percent-encoded backslashes (%5C) decode into separators just the same.
+  if (decodedPath.includes('\\')) {
     return '';
   }
-  if (/(^|\/)\.\.?(\/|$)/.test(decodedPath) || /%2e/i.test(pathOnly)) {
+
+  // Resolve dot segments ("/d/abc/../../admin" -> "/admin") so the prefix and
+  // route checks below see the path the browser will actually request.
+  const normalizedPrefix = subpath.replace(/\/+$/, '');
+  const resolved = resolveDotSegments(decodedPath);
+  if (resolved === null || !resolved.startsWith(`${normalizedPrefix}/`)) {
+    return '';
+  }
+  const route = resolved.slice(normalizedPrefix.length);
+  // Segment boundaries matter: "/explorer" is not Explore.
+  if (!/^(\/d\/[^/]+|\/explore)(\/|$)/.test(route)) {
     return '';
   }
 
