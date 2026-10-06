@@ -86,25 +86,42 @@ export function toRelativeUrl(url: string, kioskModeEnabled = true, subpath: str
   // route checks below see the path the browser will actually request.
   const normalizedPrefix = subpath.replace(/\/+$/, '');
   const resolved = resolveDotSegments(decodedPath);
-  if (resolved === null || !resolved.startsWith(`${normalizedPrefix}/`)) {
+  if (resolved === null) {
     return '';
   }
-  const route = resolved.slice(normalizedPrefix.length);
+  // parseGrafanaLinks and persisted refs emit root-relative "/d/" and
+  // "/explore" URLs even when Grafana is served under a subpath. Accept those
+  // and upgrade them to the prefixed form so the iframe resolves; URLs that
+  // already carry the prefix are validated as-is.
+  let route = resolved;
+  let needsPrefix = false;
+  if (normalizedPrefix) {
+    if (resolved.startsWith(`${normalizedPrefix}/`)) {
+      route = resolved.slice(normalizedPrefix.length);
+    } else {
+      needsPrefix = true;
+    }
+  }
   // Segment boundaries matter: "/explorer" is not Explore.
-  if (!/^(\/d\/[^/]+|\/explore)(\/|$)/.test(route)) {
+  if (!/^\/(d\/[^/]+|explore)(\/|$)/.test(route)) {
     return '';
   }
 
-  if (relativeUrl.includes('kiosk') || relativeUrl.includes('viewPanel')) {
-    return relativeUrl;
+  let output = relativeUrl;
+  if (needsPrefix && !relativeUrl.startsWith(`${normalizedPrefix}/`)) {
+    output = `${normalizedPrefix}${relativeUrl}`;
+  }
+
+  if (output.includes('kiosk') || output.includes('viewPanel')) {
+    return output;
   }
 
   if (!kioskModeEnabled) {
-    return relativeUrl;
+    return output;
   }
 
-  const separator = relativeUrl.includes('?') ? '&' : '?';
-  return `${relativeUrl}${separator}kiosk`;
+  const separator = output.includes('?') ? '&' : '?';
+  return `${output}${separator}kiosk`;
 }
 
 /**

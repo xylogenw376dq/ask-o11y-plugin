@@ -16,10 +16,18 @@ describe('toRelativeUrl', () => {
     expect(toRelativeUrl('/grafana/d/abc/x', true, '/grafana/')).toBe('/grafana/d/abc/x?kiosk');
   });
 
+  it('upgrades root-relative refs to the subpath-prefixed form', () => {
+    // parseGrafanaLinks emits root-relative URLs even on subpath deployments.
+    expect(toRelativeUrl('/d/abc/x', true, '/grafana')).toBe('/grafana/d/abc/x?kiosk');
+    expect(toRelativeUrl('/explore', true, '/grafana')).toBe('/grafana/explore?kiosk');
+    expect(toRelativeUrl('/explore?left={}', true, '/grafana')).toBe('/grafana/explore?left={}&kiosk');
+  });
+
   it('rejects routes outside the configured subpath', () => {
-    expect(toRelativeUrl('/d/abc/x', true, '/grafana')).toBe('');
     expect(toRelativeUrl('/grafana/admin/users', true, '/grafana')).toBe('');
     expect(toRelativeUrl('/grafana/d/abc/../../admin', true, '/grafana')).toBe('');
+    expect(toRelativeUrl('/admin/users', true, '/grafana')).toBe('');
+    expect(toRelativeUrl('/grafanad/abc', true, '/grafana')).toBe('');
   });
 
   it('does not duplicate kiosk parameter', () => {
