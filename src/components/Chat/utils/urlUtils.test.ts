@@ -82,6 +82,20 @@ describe('toRelativeUrl', () => {
     expect(toRelativeUrl('https://grafana.example.com/d/../admin')).toBe('');
   });
 
+  it('rejects double-encoded traversal and separators', () => {
+    // "%252e%252e" decodes once to literal "%2e%2e", which servers then read
+    // as ".." — the emitted path must be fully decoded before validation.
+    expect(toRelativeUrl('/d/%252e%252e/admin')).toBe('');
+    expect(toRelativeUrl('/d/%252e%252e/x')).toBe('');
+    expect(toRelativeUrl('/grafana/d/%252e%252e/admin', true, '/grafana')).toBe('');
+    expect(toRelativeUrl('/d/%255c..%255cadmin')).toBe('');
+  });
+
+  it('still accepts legitimately percent-encoded paths', () => {
+    expect(toRelativeUrl('/d/abc123/my%20dashboard')).toBe('/d/abc123/my dashboard?kiosk');
+    expect(toRelativeUrl('/d/abc123/%D0%BF%D0%B0%D0%BD%D0%B5%D0%BB%D1%8C')).toBe('/d/abc123/панель?kiosk');
+  });
+
   it('rejects backslash traversal (browsers treat \\ as / in HTTP URLs)', () => {
     expect(toRelativeUrl('/d/\\..\\..\\admin')).toBe('');
     expect(toRelativeUrl('/d/%5c..%5cadmin')).toBe('');

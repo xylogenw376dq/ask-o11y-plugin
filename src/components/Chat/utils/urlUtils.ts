@@ -67,18 +67,27 @@ export function toRelativeUrl(url: string, kioskModeEnabled = true, subpath: str
 
   // Validate the path only: query and fragment never affect routing.
   const pathOnly = relativeUrl.split(/[?#]/)[0];
-  // Browsers treat "\" as "/" in HTTP(S) URLs.
-  if (pathOnly.includes('\\')) {
-    return '';
+
+  // Fully percent-decode (bounded) so double-encoded sequences cannot smuggle
+  // traversal past the dot-segment resolver or survive into the emitted path:
+  // "%252e%252e" decodes once to "%2e%2e", which servers then read as "..".
+  let decodedPath = pathOnly;
+  for (let i = 0; i < 4 && /%[0-9a-f]/i.test(decodedPath); i++) {
+    let next: string;
+    try {
+      next = decodeURIComponent(decodedPath);
+    } catch {
+      return '';
+    }
+    if (next === decodedPath) {
+      break;
+    }
+    decodedPath = next;
   }
-  let decodedPath: string;
-  try {
-    decodedPath = decodeURIComponent(pathOnly);
-  } catch {
-    return '';
-  }
-  // Percent-encoded backslashes (%5C) decode into separators just the same.
-  if (decodedPath.includes('\\')) {
+  // Raw and percent-encoded backslashes decode into separators just the same
+  // (browsers treat "\" as "/" in HTTP(S) URLs). Malformed escapes ("%zz")
+  // never round-trip cleanly, so reject them too.
+  if (decodedPath.includes('\\') || /[\u0000-\u001f]/.test(decodedPath) || /%(?![0-9a-f]{2})/i.test(decodedPath)) {
     return '';
   }
 
