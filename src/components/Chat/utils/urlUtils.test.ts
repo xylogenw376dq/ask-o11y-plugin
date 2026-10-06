@@ -23,6 +23,14 @@ describe('toRelativeUrl', () => {
     expect(toRelativeUrl('/explore?left={}', true, '/grafana')).toBe('/grafana/explore?left={}&kiosk');
   });
 
+  it('emits the resolved path so the iframe cannot escape the subpath', () => {
+    // "/grafana/x/../../d/abc/x" passes validation (resolves to a valid
+    // route) but must not be returned raw: the browser would resolve it
+    // outside the Grafana mount.
+    expect(toRelativeUrl('/grafana/x/../../d/abc/x', true, '/grafana')).toBe('/grafana/d/abc/x?kiosk');
+    expect(toRelativeUrl('/d/abc/x?left=1', true, '/grafana')).toBe('/grafana/d/abc/x?left=1&kiosk');
+  });
+
   it('rejects routes outside the configured subpath', () => {
     expect(toRelativeUrl('/grafana/admin/users', true, '/grafana')).toBe('');
     expect(toRelativeUrl('/grafana/d/abc/../../admin', true, '/grafana')).toBe('');

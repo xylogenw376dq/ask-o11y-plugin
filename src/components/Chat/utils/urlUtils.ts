@@ -107,10 +107,12 @@ export function toRelativeUrl(url: string, kioskModeEnabled = true, subpath: str
     return '';
   }
 
-  let output = relativeUrl;
-  if (needsPrefix && !relativeUrl.startsWith(`${normalizedPrefix}/`)) {
-    output = `${normalizedPrefix}${relativeUrl}`;
-  }
+  // Emit the resolved path, not the raw one: a ref like
+  // "/grafana/x/../../d/abc/x" passes validation but the browser would
+  // resolve it outside the Grafana mount. Query and fragment are inert and
+  // carried over verbatim.
+  const suffix = relativeUrl.slice(pathOnly.length);
+  let output = (needsPrefix ? normalizedPrefix : '') + resolved + suffix;
 
   if (output.includes('kiosk') || output.includes('viewPanel')) {
     return output;
